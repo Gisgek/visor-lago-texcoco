@@ -1,0 +1,337 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Visor Lago de Texcoco</title>
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        :root {
+            --bg-panel: rgba(15, 23, 42, 0.98); --bg-control: rgba(30, 41, 59, 0.85);
+            --border-color: rgba(148, 163, 184, 0.2); --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8; --accent: #3b82f6; --success: #10b981;
+            --warning: #f59e0b; --shadow: 0 8px 32px rgba(0, 0, 0, 0.6); --radius: 14px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; padding: 0; background: #0f172a; font-family: 'Segoe UI', system-ui, sans-serif; color: var(--text-primary); overflow: hidden; height: 100dvh; }
+        
+        #map { position: absolute; top: 0; left: 0; width: 100%; height: calc(100dvh - 52px); z-index: 1; }
+        
+        /* BARRA INFERIOR FIJA */
+        .bottom-bar {
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 52px;
+            background: rgba(15, 23, 42, 0.98); border-top: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 12px; z-index: 30; gap: 12px; backdrop-filter: blur(8px);
+        }
+        .bar-btn {
+            flex: 1; height: 40px; border-radius: 10px; border: none;
+            font-size: 12px; font-weight: 600; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            transition: all 0.2s; text-decoration: none; white-space: nowrap;
+            touch-action: manipulation;
+        }
+        .btn-fuentes { background: rgba(255,255,255,0.1); color: var(--text-secondary); }
+        .btn-fuentes:active { background: rgba(255,255,255,0.2); transform: scale(0.98); }
+        .btn-tutorial { background: var(--warning); color: #fff; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4); }
+        .btn-tutorial:active { background: #d97706; transform: scale(0.98); }
+        
+        /* MODAL FUENTES */
+        .sources-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.75); z-index: 90; display: none; opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .sources-overlay.active { display: block; opacity: 1; }
+        .sources-modal {
+            position: fixed; bottom: -100%; left: 0; width: 100%; max-height: 65vh;
+            background: var(--bg-panel); border-radius: 18px 18px 0 0;
+            padding: 24px 20px 40px 20px; z-index: 100;
+            transition: bottom 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+            overflow-y: auto; box-shadow: 0 -10px 50px rgba(0,0,0,0.6);
+        }
+        .sources-modal.active { bottom: 0; }
+        .sources-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .sources-title { font-size: 16px; font-weight: 700; color: white; }
+        .close-sources { background: rgba(255,255,255,0.15); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; }
+        .sources-text { font-size: 14px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 20px; padding: 14px; background: rgba(0,0,0,0.4); border-radius: 10px; border-left: 4px solid var(--accent); }
+        .sources-text strong { color: white; }
+        .social-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .social-btn { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--text-secondary); font-size: 11px; padding: 10px 5px; border-radius: 10px; background: rgba(255,255,255,0.05); transition: 0.2s; }
+        .social-btn:active { background: rgba(255,255,255,0.15); transform: scale(0.95); }
+        .social-btn svg { width: 24px; height: 24px; fill: currentColor; }
+        
+        /* PANELES LATERALES */
+        .panel-left { position: absolute; top: 20px; left: 20px; width: 280px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); z-index: 20; display: flex; flex-direction: column; gap: 14px; max-height: calc(100dvh - 90px); overflow-y: auto; }
+        .panel-right { position: absolute; top: 20px; right: 20px; width: 260px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); z-index: 20; display: flex; flex-direction: column; gap: 14px; max-height: calc(100dvh - 90px); overflow-y: auto; }
+        
+        /* BOTONES FLOTANTES MÓVIL */
+        .mobile-fab { display: none; position: absolute; top: 20px; z-index: 25; width: 46px; height: 46px; border-radius: 50%; border: none; color: white; font-size: 22px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.5); align-items: center; justify-content: center; touch-action: manipulation; transition: transform 0.2s; }
+        .mobile-fab:active { transform: scale(0.9); }
+        #fab-layers { left: 20px; background: #3b82f6; }
+        #fab-search { right: 20px; background: #10b981; }
+        .close-panel-btn { display: none; position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,0.15); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+        
+        /* UI ELEMENTS */
+        .section { padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+        .section-title { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; letter-spacing: 0.5px; }
+        select, input[type="text"] { width: 100%; background: var(--bg-control); border: 1px solid var(--border-color); color: white; padding: 9px 10px; border-radius: 8px; font-size: 13px; }
+        .control-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; }
+        input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+        .btn-action { width: 100%; padding: 9px; background: transparent; border: 1px solid var(--accent); color: var(--accent); border-radius: 8px; cursor: pointer; font-size: 12px; margin-top: 6px; font-weight: 500; }
+        .btn-action:active { background: var(--accent); color: white; }
+        .risk-legend { background: var(--bg-control); padding: 12px; border-radius: 8px; font-size: 11px; display: none; }
+        .risk-legend.visible { display: block; }
+        .legend-item { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+        .legend-color { width: 14px; height: 10px; border-radius: 2px; }
+        
+        .maplibregl-popup-content { background: #1e293b !important; color: white !important; border-radius: 10px !important; padding: 12px !important; max-width: 240px !important; font-family: inherit; }
+        .popup-toggle { background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 11px; text-decoration: underline; }
+        .popup-details { display: none; margin-top: 8px; font-size: 10px; }
+        .popup-details.visible { display: block; }
+
+        /* RESPONSIVE MÓVIL */
+        @media (max-width: 900px) {
+            .mobile-fab { display: flex; }
+            .close-panel-btn { display: block; }
+            
+            .panel-left {
+                position: fixed; top: 0; left: 0; bottom: 52px; width: 85%; max-width: 320px;
+                max-height: 100%; border-radius: 0; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 40;
+                pointer-events: none;
+            }
+            .panel-left.active { transform: translateX(0); pointer-events: auto; }
+            
+            .panel-right {
+                position: fixed; top: 0; right: 0; bottom: 52px; width: 85%; max-width: 320px;
+                max-height: 100%; border-radius: 0; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 40;
+                pointer-events: none;
+            }
+            .panel-right.active { transform: translateX(0); pointer-events: auto; }
+            
+            #map { height: calc(100dvh - 52px); }
+            .social-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Overlay para cerrar menús -->
+<div class="sources-overlay" id="sources-overlay"></div>
+
+<!-- Botones Flotantes (Móvil) -->
+<button id="fab-layers" class="mobile-fab" aria-label="Capas">⚙️</button>
+<button id="fab-search" class="mobile-fab" aria-label="Buscar">🔍</button>
+
+<!-- PANEL IZQUIERDO: Capas -->
+<div class="panel-left" id="panel-left">
+    <button class="close-panel-btn" aria-label="Cerrar">✕</button>
+    <div class="section">
+        <div class="section-title">Mapa base</div>
+        <select id="basemap-select"><option value="dark">Carto Dark Matter</option><option value="google">Google Satellite Hybrid</option></select>
+    </div>
+    <div class="section">
+        <div class="section-title">Perspectiva</div>
+        <button class="btn-action" id="btn-3d">Cambiar a vista 2D</button>
+    </div>
+    <div class="section">
+        <div class="section-title">Capas vectoriales</div>
+        <div class="control-row"><span>Lago histórico (1519)</span><input type="checkbox" id="cb-lago-1519" class="layer-cb lake-cb" checked data-layer="lago_1519"></div>
+        <div class="control-row"><span>Principios de 1900</span><input type="checkbox" id="cb-lago-1900" class="layer-cb lake-cb" data-layer="lago_1900"></div>
+        <div class="control-row"><span>Lago 1970</span><input type="checkbox" id="cb-lago-1970" class="layer-cb lake-cb" data-layer="lago_1970"></div>
+        <div class="control-row"><span>Lago 1980</span><input type="checkbox" id="cb-lago-1980" class="layer-cb lake-cb" data-layer="lago_1980"></div>
+        <div class="control-row"><span>Riesgo de inundación</span><input type="checkbox" id="cb-riesgo" class="layer-cb" data-layer="riesgo"></div>
+        <div class="control-row"><span>Límites de colonias</span><input type="checkbox" id="cb-colonias" class="layer-cb" data-layer="colonias"></div>
+    </div>
+</div>
+
+<!-- PANEL DERECHO: Búsqueda -->
+<div class="panel-right" id="panel-right">
+    <button class="close-panel-btn" aria-label="Cerrar">✕</button>
+    <div class="section">
+        <div class="section-title">Localización</div>
+        <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+            <input type="text" id="search-input" list="colonias-list" placeholder="Nombre de colonia...">
+            <button class="btn-action" id="btn-geo" style="width: auto; padding: 0 12px;">📍</button>
+        </div>
+        <datalist id="colonias-list"></datalist>
+    </div>
+    <div class="section">
+        <div class="section-title">Opacidad del lago</div>
+        <input type="range" id="lake-opacity" min="0" max="100" value="65">
+    </div>
+    <div class="risk-legend" id="risk-legend">
+        <div style="font-weight:bold; margin-bottom:6px; font-size:10px; color:#94a3b8; text-transform:uppercase">Niveles de riesgo</div>
+        <div class="legend-item"><span class="legend-color" style="background:#dc2626"></span><span>Muy alto</span></div>
+        <div class="legend-item"><span class="legend-color" style="background:#ea580c"></span><span>Alto</span></div>
+        <div class="legend-item"><span class="legend-color" style="background:#d97706"></span><span>Medio</span></div>
+        <div class="legend-item"><span class="legend-color" style="background:#059669"></span><span>Bajo</span></div>
+        <div class="legend-item"><span class="legend-color" style="background:#10b981"></span><span>Muy bajo</span></div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<!-- BARRA INFERIOR FIJA -->
+<div class="bottom-bar">
+    <button class="bar-btn btn-fuentes" id="btn-fuentes">📖 Haz click aquí</button>
+    <a href="https://drive.google.com/file/d/1JDB6xz-BOkH5EiuAIfeXsWVdaOo5LbNF/view?usp=sharing" target="_blank" class="bar-btn btn-tutorial">🎓 Aprende a generar mapas web</a>
+</div>
+
+<!-- MODAL DE FUENTES -->
+<div class="sources-modal" id="sources-modal">
+    <div class="sources-header">
+        <span class="sources-title">Créditos y Fuentes</span>
+        <button class="close-sources" id="close-sources">✕</button>
+    </div>
+    <div class="sources-text">
+        Elaboró <strong>Geog. Alfonso Arteaga</strong> con base en datos abiertos CDMX, Atlas de Riesgo CDMX, Colonias INEGI.
+    </div>
+    <div class="section-title" style="margin-bottom: 12px;">Sígueme en redes</div>
+    <div class="social-grid">
+        <a href="https://www.tiktok.com/@alfonso_arteaga" target="_blank" class="social-btn"><svg viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>TikTok</a>
+        <a href="https://www.instagram.com/gis_geek/" target="_blank" class="social-btn"><svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>Instagram</a>
+        <a href="https://www.youtube.com/@SIGArteaga" target="_blank" class="social-btn"><svg viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>YouTube</a>
+        <a href="https://www.facebook.com/GeoGeekAlfonso" target="_blank" class="social-btn"><svg viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>Facebook</a>
+    </div>
+</div>
+
+<script>
+    // === LÓGICA DE INTERFAZ CORREGIDA ===
+    const panelLeft = document.getElementById('panel-left');
+    const panelRight = document.getElementById('panel-right');
+    const overlay = document.getElementById('sources-overlay');
+    const sourcesModal = document.getElementById('sources-modal');
+    const fabLayers = document.getElementById('fab-layers');
+    const fabSearch = document.getElementById('fab-search');
+    const btnFuentes = document.getElementById('btn-fuentes');
+    const closeSources = document.getElementById('close-sources');
+    const closeLeft = panelLeft.querySelector('.close-panel-btn');
+    const closeRight = panelRight.querySelector('.close-panel-btn');
+
+    // Función central para abrir/cerrar paneles
+    function togglePanel(side) {
+        if (side === 'left') {
+            panelLeft.classList.toggle('active');
+            panelRight.classList.remove('active');
+        } else {
+            panelRight.classList.toggle('active');
+            panelLeft.classList.remove('active');
+        }
+    }
+
+    // Cerrar todo al tocar el overlay
+    function closeAll() {
+        panelLeft.classList.remove('active');
+        panelRight.classList.remove('active');
+        sourcesModal.classList.remove('active');
+        overlay.classList.remove('active');
+    }
+
+    // EVENT LISTENERS (AQUÍ ESTABA EL ERROR ANTERIOR)
+    fabLayers.addEventListener('click', () => togglePanel('left'));
+    fabSearch.addEventListener('click', () => togglePanel('right'));
+    
+    closeLeft.addEventListener('click', () => togglePanel('left'));
+    closeRight.addEventListener('click', () => togglePanel('right'));
+    
+    overlay.addEventListener('click', closeAll);
+    closeSources.addEventListener('click', closeAll);
+    
+    btnFuentes.addEventListener('click', () => {
+        panelLeft.classList.remove('active');
+        panelRight.classList.remove('active');
+        sourcesModal.classList.add('active');
+        overlay.classList.add('active');
+    });
+
+    // === LÓGICA DEL MAPA ===
+    const map = new maplibregl.Map({ container: 'map', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json', center: [-99.04, 19.45], zoom: 10.5, pitch: 55, bearing: -15 });
+    let allFeatures = []; let is3D = true; let layerDataStore = {};
+    const lakeLayerIds = ['lago_1519', 'lago_1900', 'lago_1970', 'lago_1980'];
+    const autoZoomLakeIds = ['lago_1900', 'lago_1970', 'lago_1980'];
+
+    async function loadLayer(id, path, type, paint, layout = {}) {
+        try {
+            const res = await fetch(path); const data = await res.json();
+            layerDataStore[id] = data;
+            if (map.getSource(id)) map.removeSource(id);
+            map.addSource(id, { type: 'geojson', data });
+            map.addLayer({ id: id + '-lyr', type, source: id, paint, layout: { visibility: 'none', ...layout } });
+        } catch (err) { console.error(err); }
+    }
+
+    function fitMapToLayer(layerId) {
+        const data = layerDataStore[layerId]; if (!data?.features?.length) return;
+        let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
+        data.features.forEach(f => {
+            const c = f.geometry?.coordinates; if (!c) return;
+            const flat = c.flat(Infinity).filter(n => typeof n === 'number');
+            for (let i = 0; i < flat.length; i += 2) {
+                if (flat[i] < minLng) minLng = flat[i]; if (flat[i] > maxLng) maxLng = flat[i];
+                if (flat[i+1] < minLat) minLat = flat[i+1]; if (flat[i+1] > maxLat) maxLat = flat[i+1];
+            }
+        });
+        if (minLng !== 180) map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 50, duration: 1000 });
+    }
+
+    map.on('load', async () => {
+        map.addSource('google-hybrid-src', { type: 'raster', tiles: ['https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'], tileSize: 256 });
+        map.addLayer({ id: 'google-hybrid-lyr', type: 'raster', source: 'google-hybrid-src', layout: { visibility: 'none' } });
+
+        await loadLayer('riesgo', 'data/riesgo.geojson', 'fill', { 'fill-color': ['match', ['get', 'intnsdd'], 'Muy Alto', '#dc2626', 'Alto', '#ea580c', 'Medio', '#d97706', 'Bajo', '#059669', 'Muy Bajo', '#10b981', '#64748b'], 'fill-opacity': 0.5 });
+        map.on('click', 'riesgo-lyr', e => { if (e.features?.[0]?.properties) new maplibregl.Popup({ maxWidth: '220px' }).setLngLat(e.lngLat).setHTML(`<b style="font-size:13px">${e.features[0].properties.intnsdd || 'Riesgo'}</b>`).addTo(map); });
+
+        const lakeStyles = { 'lago_1519': { color: '#3b82f6', opacity: 0.65 }, 'lago_1900': { color: '#60a5fa', opacity: 0.55 }, 'lago_1970': { color: '#93c5fd', opacity: 0.45 }, 'lago_1980': { color: '#bfdbfe', opacity: 0.35 } };
+        for (const [id, s] of Object.entries(lakeStyles)) await loadLayer(id, `data/${id}.geojson`, 'fill', { 'fill-color': s.color, 'fill-opacity': s.opacity });
+
+        await loadLayer('cdmx', 'data/cdmx.geojson', 'line', { 'line-color': '#a0aec0', 'line-width': 1.5 });
+        await loadLayer('edomex', 'data/edomex.geojson', 'line', { 'line-color': '#94a3b8', 'line-width': 1.5 });
+
+        map.on('click', e => {
+            const features = map.queryRenderedFeatures(e.point, { layers: ['cdmx-lyr', 'edomex-lyr'] });
+            if (features.length) new maplibregl.Popup({ maxWidth: '220px' }).setLngLat(e.lngLat).setHTML(`<b style="font-size:13px">🏘️ ${features[0].properties.nom_asen || features[0].properties.nombre || 'Colonia'}</b>`).addTo(map);
+        });
+
+        ['cdmx', 'edomex'].forEach(id => { const src = map.getSource(id); if (src?.serialize()?.data?.features) allFeatures.push(...src.serialize().data.features); });
+        const names = new Set(); allFeatures.forEach(f => { const n = f.properties?.nom_asen || f.properties?.nombre; if (n) names.add(String(n).trim()); });
+        const dl = document.getElementById('colonias-list'); Array.from(names).sort().forEach(n => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
+
+        document.getElementById('basemap-select').addEventListener('change', e => map.setLayoutProperty('google-hybrid-lyr', 'visibility', e.target.value === 'google' ? 'visible' : 'none'));
+        document.getElementById('btn-3d').addEventListener('click', e => { const t = is3D ? { pitch: 0, bearing: 0 } : { pitch: 55, bearing: -15 }; map.flyTo({ ...t, duration: 1000 }); e.target.textContent = is3D ? 'Cambiar a vista 3D' : 'Cambiar a vista 2D'; is3D = !is3D; });
+        document.getElementById('btn-geo').addEventListener('click', () => navigator.geolocation.getCurrentPosition(p => { map.flyTo({ center: [p.coords.longitude, p.coords.latitude], zoom: 14 }); }));
+
+        document.querySelectorAll('.layer-cb').forEach(cb => {
+            cb.addEventListener('change', function() {
+                const id = this.dataset.layer; const checked = this.checked;
+                if (this.classList.contains('lake-cb')) {
+                    if (checked) {
+                        document.querySelectorAll('.lake-cb').forEach(o => { o.checked = (o === this); map.setLayoutProperty(o.dataset.layer + '-lyr', 'visibility', o.checked ? 'visible' : 'none'); });
+                        if (autoZoomLakeIds.includes(id)) setTimeout(() => fitMapToLayer(id), 300);
+                    } else map.setLayoutProperty(id + '-lyr', 'visibility', 'none');
+                } else if (id === 'colonias') {
+                    ['cdmx', 'edomex'].forEach(l => { if (map.getLayer(l + '-lyr')) map.setLayoutProperty(l + '-lyr', 'visibility', checked ? 'visible' : 'none'); });
+                } else if (id === 'riesgo') {
+                    map.setLayoutProperty('riesgo-lyr', 'visibility', checked ? 'visible' : 'none');
+                    document.getElementById('risk-legend').classList.toggle('visible', checked);
+                }
+            });
+        });
+
+        document.getElementById('lake-opacity').addEventListener('input', e => { const v = e.target.value / 100; lakeLayerIds.forEach(l => { if (map.getLayer(l + '-lyr')) map.setPaintProperty(l + '-lyr', 'fill-opacity', v); }); });
+        document.getElementById('search-input').addEventListener('change', e => {
+            const q = e.target.value.trim().toLowerCase(); if (!q) return;
+            const match = allFeatures.find(f => (f.properties?.nom_asen || f.properties?.nombre || '').toString().toLowerCase() === q);
+            if (match?.geometry?.coordinates) {
+                let c = match.geometry.type === 'Point' ? match.geometry.coordinates : (() => { const a = match.geometry.coordinates.flat(Infinity); return [(Math.min(...a.filter((_,i)=>i%2===0)) + Math.max(...a.filter((_,i)=>i%2===0)))/2, (Math.min(...a.filter((_,i)=>i%2===1)) + Math.max(...a.filter((_,i)=>i%2===1)))/2]; })();
+                map.flyTo({ center: c, zoom: 15.5 });
+            }
+        });
+
+        if (map.getLayer('lago_1519-lyr')) map.setLayoutProperty('lago_1519-lyr', 'visibility', 'visible');
+    });
+</script>
+</body>
+</html>
